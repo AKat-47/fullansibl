@@ -166,10 +166,9 @@
 
     # ============ 8. VS CODE ============
     - name: Add Microsoft GPG key for VS Code
-      get_url:
-        url: https://packages.microsoft.com/keys/microsoft.asc
-        dest: /usr/share/keyrings/microsoft.gpg
-        mode: '0644'
+      shell: curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+      args:
+        creates: /usr/share/keyrings/microsoft.gpg
 
     - name: Add VS Code repository
       apt_repository:
@@ -179,27 +178,25 @@
 
     # ============ 9. OPERA ============
     - name: Add Opera GPG key
-      get_url:
-        url: https://deb.opera.com/archive.key
-        dest: /etc/apt/keyrings/opera.asc
-        mode: '0644'
+      shell: curl -fsSL https://deb.opera.com/archive.key | gpg --dearmor -o /etc/apt/keyrings/opera.gpg
+      args:
+        creates: /etc/apt/keyrings/opera.gpg
 
     - name: Add Opera repository
       apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/opera.asc] https://deb.opera.com/opera-stable/ stable non-free"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/opera.gpg] https://deb.opera.com/opera-stable/ stable non-free"
         state: present
         filename: opera
 
     # ============ 10. GOOGLE CHROME ============
     - name: Add Chrome GPG key
-      get_url:
-        url: https://dl.google.com/linux/linux_signing_key.pub
-        dest: /etc/apt/keyrings/google-chrome.asc
-        mode: '0644'
+      shell: curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg
+      args:
+        creates: /etc/apt/keyrings/google-chrome.gpg
 
     - name: Add Chrome repository
       apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] https://dl.google.com/linux/chrome/deb/ stable main"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main"
         state: present
         filename: google-chrome
 
