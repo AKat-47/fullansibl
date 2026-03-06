@@ -10,10 +10,6 @@
     
     rdp_users:
       - rdpuser1
-      - rdpuser2
-      - rdpuser3
-      - rdpuser4
-      - rdpuser5
 
   tasks:
     # ============ 1. SSH ПОРТ ============
