@@ -115,11 +115,11 @@
       copy:
         content: "xfce4-session"
         dest: "/home/{{ item }}/.xsession"
-        owner: "{{ rdp_user }}"
-        group: "{{ rdp_user }}"
+        owner: "{{ item }}"
+        group: "{{ item }}"
         mode: '0644'
       loop: "{{ rdp_users }}"
-      notify: restart xrdp    
+      notify: restart xrdp
 
     - name: Allow rdpuser to use XRDP
       user:
@@ -283,7 +283,7 @@
           Name=Telegram Desktop
           Comment=Official Telegram Desktop Client
           Exec=/opt/Telegram/Telegram -- %u
-          Icon=telegram_installed
+          Icon=telegram
           Terminal=false
           StartupWMClass=TelegramDesktop
           Type=Application
@@ -295,11 +295,12 @@
     # ============ 15. FINALIZE ============
     - name: Create desktop shortcuts for RDP user
       file:
-        path: "/home/{{ rdp_user }}/Desktop"
+        path: "/home/{{ item }}/Desktop"
         state: directory
-        owner: "{{ rdp_user }}"
-        group: "{{ rdp_user }}"
+        owner: "{{ item }}"
+        group: "{{ item }}"
         mode: '0755'
+      loop: "{{ rdp_users }}"
 
     - name: Clean up
       apt:
