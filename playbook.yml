@@ -1,0 +1,328 @@
+---
+- name: Configure servers with full setup
+  hosts: servers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    ssh_port: 49753
+    sysadmin: sysadmin
+    
+    rdp_users:
+      - rdpuser1
+      - rdpuser2
+      - rdpuser3
+      - rdpuser4
+      - rdpuser5
+
+  tasks:
+    # ============ 1. SSH ПОРТ ============
+    - name: Change SSH port
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Port '
+        line: 'Port {{ ssh_port }}'
+      notify: restart ssh
+    
+    - meta: flush_handlers
+
+    - name: Wait for new SSH port to be reachable
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: "{{ ssh_port }}"
+        timeout: 60
+      delegate_to: localhost
+      become: false
+
+    - name: Switch Ansible to new SSH port
+      set_fact:
+        ansible_port: "{{ ssh_port }}"
+
+    - meta: reset_connection
+    # ============ 2. СИСТЕМА ============
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install basic utilities
+      apt:
+        name:
+          - xz-utils
+          - unzip
+          - curl
+          - wget
+          - git
+          - htop
+          - vim
+          - net-tools
+          - build-essential
+          - dkms
+          - linux-headers-generic
+          - software-properties-common
+          - gnupg
+          - ca-certificates
+        state: present
+
+    # ============ 3. СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ SUDO USER ============
+    - name: Create sudo user {{ sysadmin }}
+      user:
+        name: "{{ sysadmin }}"
+        password: "{{ sysadmin_password | password_hash('sha512') }}"
+        groups: sudo
+        shell: /bin/bash
+        createhome: yes
+        state: present
+
+    - name: Allow sudo user sudo without passwd
+      lineinfile:
+        path: /etc/sudoers.d/{{ sysadmin }}
+        line: '{{ sysadmin }} ALL=(ALL) NOPASSWD:ALL'
+        create: yes
+        mode: '0440'
+
+    # ============ 4. СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ RDP ============
+    - name: Create rdpuser
+      user:
+        name: "{{ item }}"
+        password: "{{ rdp_password | password_hash('sha512') }}"
+        groups: audio,video
+        shell: /bin/bash
+        createhome: yes
+        state: present
+      loop: "{{ rdp_users }}"
+
+    # ============ 5. XFCE GUI + XRDP ============
+    - name: Install XFCE desktop environment
+      apt:
+        name:
+          - xfce4
+          - xfce4-terminal
+          - xfce4-panel
+          - xfce4-settings
+          - xfce4-session
+        state: present
+
+    - name: Install XRDP server
+      apt:
+        name:
+          - xrdp
+        state: present
+
+    - name: Configure XRDP to use XFCE
+      copy:
+        content: "xfce4-session"
+        dest: "/home/{{ item }}/.xsession"
+        owner: "{{ rdp_user }}"
+        group: "{{ rdp_user }}"
+        mode: '0644'
+      loop: "{{ rdp_users }}"
+      notify: restart xrdp    
+
+    - name: Allow rdpuser to use XRDP
+      user:
+        name: "{{ item }}"
+        groups: xrdp
+        append: yes
+      loop: "{{ rdp_users }}"
+    
+    - name: Enable and start XRDP
+      systemd:
+        name: xrdp
+        enabled: yes
+        state: started
+
+    # ============ 6. UFW FIREWALL ============
+    - name: Install UFW
+      apt:
+        name: ufw
+        state: present
+
+    - name: Reset UFW to defaults
+      shell: ufw --force reset
+
+    - name: Set UFW default policies
+      ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: 'incoming', policy: 'deny' }
+        - { direction: 'outgoing', policy: 'allow' }
+
+    - name: Open SSH port {{ ssh_port }}
+      ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+
+    - name: Open RDP port (3389)
+      ufw:
+        rule: allow
+        port: "3389"
+        proto: tcp
+
+    - name: Allow localhost
+      ufw:
+        rule: allow
+        from_ip: "{{ item }}"
+      loop:
+        - "127.0.0.1"
+        - "::1"
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    # ============ 7. СОЗДАНИЕ ДИРЕКТОРИИ ДЛЯ КЛЮЧИКОВ ============
+    - name: create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    # ============ 8. VS CODE ============
+    - name: Add Microsoft GPG key for VS Code
+      get_url:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        dest: /usr/share/keyrings/microsoft.gpg
+        mode: '0644'
+
+    - name: Add VS Code repository
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main"
+        state: present
+        filename: vscode
+
+    # ============ 9. OPERA ============
+    - name: Add Opera GPG key
+      get_url:
+        url: https://deb.opera.com/archive.key
+        dest: /etc/apt/keyrings/opera.asc
+        mode: '0644'
+
+    - name: Add Opera repository
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/opera.asc] https://deb.opera.com/opera-stable/ stable non-free"
+        state: present
+        filename: opera
+
+    # ============ 10. GOOGLE CHROME ============
+    - name: Add Chrome GPG key
+      get_url:
+        url: https://dl.google.com/linux/linux_signing_key.pub
+        dest: /etc/apt/keyrings/google-chrome.asc
+        mode: '0644'
+
+    - name: Add Chrome repository
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] https://dl.google.com/linux/chrome/deb/ stable main"
+        state: present
+        filename: google-chrome
+
+    # ============ 11. MICROSOFT EDGE ============
+    - name: Add Microsoft Edge repository
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/edge stable main"
+        state: present
+        filename: microsoft-edge
+
+    # ============ 12. UPDATE APT CACHE ============
+    - name: Update APT cache after adding repositories
+      apt:
+        update_cache: yes
+
+    # ============ 13. INSTALL APPLICATIONS ============
+    - name: Install applications from PPA repositories
+      apt:
+        name:
+          - code
+          - opera-stable
+          - google-chrome-stable
+          - microsoft-edge-stable
+          - notepadqq
+          - firefox
+        state: present
+      ignore_errors: yes
+
+  # ============ 14. TELEGRAM (from binary) ============
+    - name: Check if Telegram is already installed
+      stat:
+        path: /opt/Telegram/Telegram
+      register: telegram_installed
+
+    - name: Download Telegram (official tarball)
+      get_url:
+        url: "https://telegram.org/dl/desktop/linux"
+        dest: /tmp/telegram.tar.xz
+        mode: '0644'
+        force: yes
+        timeout: 60
+        http_agent: "Mozilla/5.0 (X11; Linux x86_64)"
+      when: not telegram_installed.stat.exists
+
+    - name: Extract Telegram to /opt
+      unarchive:
+        src: /tmp/telegram.tar.xz
+        dest: /opt/
+        remote_src: yes
+      when: not telegram_installed.stat.exists
+    
+    - name: Create Telegram symlink
+      file:
+        src: /opt/Telegram/Telegram
+        dest: /usr/local/bin/telegram
+        state: link
+    
+    - name: Create Telegram desktop entry
+      copy:
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Name=Telegram Desktop
+          Comment=Official Telegram Desktop Client
+          Exec=/opt/Telegram/Telegram -- %u
+          Icon=telegram_installed
+          Terminal=false
+          StartupWMClass=TelegramDesktop
+          Type=Application
+          Categories=Chat;Network;InstantMessaging;
+          MimeType=x-scheme-handler/tg;
+        dest: /usr/share/applications/telegram.desktop
+        mode: '0644'
+
+    # ============ 15. FINALIZE ============
+    - name: Create desktop shortcuts for RDP user
+      file:
+        path: "/home/{{ rdp_user }}/Desktop"
+        state: directory
+        owner: "{{ rdp_user }}"
+        group: "{{ rdp_user }}"
+        mode: '0755'
+
+    - name: Clean up
+      apt:
+        autoremove: yes
+        autoclean: yes
+
+    - name: Clean up Telegram archive
+      file:
+        path: /tmp/telegram.tar.xz
+        state: absent
+  
+    - name: Final system update
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+  handlers:
+    - name: restart ssh
+      systemd:
+        name: ssh
+        state: restarted
+
+    - name: restart xrdp
+      systemd:
+        name: xrdp
+        state: restarted
