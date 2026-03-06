@@ -46,6 +46,7 @@
           - software-properties-common
           - gnupg
           - ca-certificates
+          - python3-passlib
         state: present
 
     # ============ 3. СОЗДАНИЕ ПОЛЬЗОВАТЕЛЯ SUDO USER ============
@@ -166,7 +167,7 @@
 
     # ============ 8. VS CODE ============
     - name: Add Microsoft GPG key for VS Code
-      shell: curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+      shell: curl -fsSL https://packages.microsoft.com/keys/microsoft.asc > /tmp/microsoft.asc && gpg --yes --dearmor -o /usr/share/keyrings/microsoft.gpg /tmp/microsoft.asc && rm -f /tmp/microsoft.asc
       args:
         creates: /usr/share/keyrings/microsoft.gpg
 
@@ -295,6 +296,11 @@
       apt:
         update_cache: yes
         upgrade: dist
+
+    - name: Restart SSH after all changes
+      systemd:
+        name: ssh
+        state: restarted
 
   handlers:
     - name: restart ssh
