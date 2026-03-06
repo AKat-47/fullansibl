@@ -21,20 +21,6 @@
       notify: restart ssh
     
     - meta: flush_handlers
-
-    - name: Wait for new SSH port to be reachable
-      wait_for:
-        host: "{{ ansible_host | default(inventory_hostname) }}"
-        port: "{{ ssh_port }}"
-        timeout: 60
-      delegate_to: localhost
-      become: false
-
-    - name: Switch Ansible to new SSH port
-      set_fact:
-        ansible_port: "{{ ssh_port }}"
-
-    - meta: reset_connection
     # ============ 2. СИСТЕМА ============
     - name: Update system packages
       apt:
